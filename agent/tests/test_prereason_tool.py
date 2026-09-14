@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import src.tools.prereason_tool as prereason_module
+from src.agent.context import _SYSTEM_PROMPT
 from src.tools.prereason_tool import PreReasonContextTool
 
 
@@ -24,6 +27,7 @@ class _FakeResponse:
 
 def test_prereason_tool_is_readonly_and_requires_runtime_key(monkeypatch):
     monkeypatch.delenv("PREREASON_API_KEY", raising=False)
+    monkeypatch.setattr(prereason_module, "load_dotenv", lambda **kwargs: None)
 
     assert PreReasonContextTool.is_readonly is True
     assert PreReasonContextTool.check_available() is False
@@ -32,6 +36,21 @@ def test_prereason_tool_is_readonly_and_requires_runtime_key(monkeypatch):
     assert result["status"] == "error"
     assert result["source"] == "prereason"
     assert "not configured" in result["error"]
+
+
+def test_prereason_check_available_loads_dotenv_before_registry_decision(monkeypatch):
+    monkeypatch.delenv("PREREASON_API_KEY", raising=False)
+    calls = []
+
+    def fake_load_dotenv(*, override=False):
+        calls.append(override)
+        monkeypatch.setenv("PREREASON_API_KEY", "dotenv-only-test-key")
+        return True
+
+    monkeypatch.setattr(prereason_module, "load_dotenv", fake_load_dotenv)
+
+    assert PreReasonContextTool.check_available() is True
+    assert calls == [False]
 
 
 def test_prereason_context_uses_x_api_key_without_returning_secret(monkeypatch):
@@ -105,3 +124,17 @@ def test_prereason_rejects_unknown_briefing_before_network(monkeypatch):
     result = json.loads(PreReasonContextTool().execute(briefing="unknown.signal"))
     assert result["status"] == "error"
     assert result["error"] == "Unsupported PreReason briefing"
+
+
+def test_crypto_macro_swarm_route_requires_prereason_before_swarm():
+    swarm_section = _SYSTEM_PROMPT.split("**Swarm team**", 1)[1].split("**Analysis / research**", 1)[0]
+
+    assert "if `prereason_context` is available" in swarm_section
+    assert "call it BEFORE `run_swarm`" in swarm_section
+    assert "PreReason context" in swarm_section
+
+
+def test_security_workflow_scans_prereason_key_prefix():
+    workflow = Path(".github/workflows/security-and-quality.yml").read_text(encoding="utf-8")
+
+    assert "pr_live_" in workflow
