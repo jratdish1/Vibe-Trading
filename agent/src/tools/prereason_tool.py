@@ -12,6 +12,7 @@ import os
 from typing import Any
 
 import requests
+from dotenv import load_dotenv
 
 from src.agent.tools import BaseTool
 
@@ -40,6 +41,11 @@ SUPPORTED_BRIEFINGS = {
     "btc.energy",
     "btc.treasury",
 }
+
+
+def _load_runtime_env() -> None:
+    """Load local .env values without overriding an existing process environment."""
+    load_dotenv(override=False)
 
 
 class PreReasonContextTool(BaseTool):
@@ -80,11 +86,13 @@ class PreReasonContextTool(BaseTool):
 
     @classmethod
     def check_available(cls) -> bool:
-        """Register only when a PreReason API key is configured."""
+        """Register when a PreReason API key exists in process env or local .env."""
+        _load_runtime_env()
         return bool(os.environ.get("PREREASON_API_KEY", "").strip())
 
     def execute(self, **kwargs: Any) -> str:
         """Fetch one PreReason briefing and return a sanitized result."""
+        _load_runtime_env()
         api_key = os.environ.get("PREREASON_API_KEY", "").strip()
         if not api_key:
             return json.dumps(
